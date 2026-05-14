@@ -24,7 +24,7 @@
 
 **Costs**:
 
-- iOS XCFramework adds ~80 MB at `pod install` time (build-time, not runtime). Acceptable for POC; should be re-arbitrated for the Murmure prod app (App Store cellular limit is 200 MB).
+- iOS XCFramework adds ~80 MB at `pod install` time (build-time, not runtime). Acceptable for POC; should be re-arbitrated for any production app where the App Store cellular limit (200 MB) is in play.
 - Documentation for Piper-specific flows in sherpa-onnx is succinct (focus on newer Kokoro/Kitten models). We had to read the wrapper's TypeScript source to derive the exact API shape.
 
 ## 2. Voice models — sherpa-onnx pre-packaged releases (not Hugging Face directly)
@@ -74,13 +74,13 @@ Piper's VITS exposes three runtime knobs that the wrapper surfaces directly:
 
 Note the `noise_w` ↔ `noiseScaleW` rename — kept the spec's `noiseW` in our TypeScript types for readability, then map to `noiseScaleW` at the wrapper boundary.
 
-**Preset values** are spec literals, the "Narration patrimoniale" target for Murmure (lengthScale=1.10, noiseScale=0.50, noiseW=0.70) is the default at app launch.
+**Preset values** are spec literals; the "Narration patrimoniale" preset (lengthScale=1.10, noiseScale=0.50, noiseW=0.70) is the default at app launch — tuned for calm, clear, gently warm heritage / documentary narration.
 
 ## 5. Splitting on `.!?` only — no comma splitting for streaming
 
 The spec asks for sentence streaming via `.!?` split. We do not split on commas, even though it would reduce TTFA on long sentences (the first French Notre-Dame sentence is ~28 words ≈ 1.6 s synthesis time on Pixel 10 Pro Fold).
 
-**Reasoning**: comma-splitting changes prosody (each comma chunk gets its own intonation curve), audibly making the read sound choppy. Trading 0.5-1 s of TTFA for natural-sounding patrimonial narration is not the right call for the Murmure use case.
+**Reasoning**: comma-splitting changes prosody (each comma chunk gets its own intonation curve), audibly making the read sound choppy. Trading 0.5-1 s of TTFA for natural-sounding narration is the right call for any long-form listening experience (heritage guides, audiobooks, documentary narration).
 
 If a future requirement asks for sub-1 s TTFA, the right answer is: warm-start the engine (model load is 790 ms on the Pixel cold start) + a hardware accelerator (NNAPI on Tensor G5 / CoreML on Apple Silicon) + Release build optimization. Not comma-splitting.
 

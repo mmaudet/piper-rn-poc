@@ -10,7 +10,7 @@
 
 Built to validate that **Piper TTS** — the neural VITS-based open-source TTS — can run fully on-device on a mobile phone, in five European languages, with **live modulation** of speed, expressivity, and rhythm.
 
-This is a standalone POC, not a production app. It exists to de-risk the integration of an on-device sovereign TTS into a larger mobile project (an audio-memorial app pinned to historic monuments).
+This is a standalone POC and benchmark tool. It exists to de-risk integration of on-device sovereign TTS into any mobile project: travel guides, accessibility, offline assistants, narration of mobile games, audio-memorial apps — anywhere you want quality voice synthesis without a cloud round-trip.
 
 ---
 
@@ -120,7 +120,7 @@ What **isn't** controllable from the model itself: emotion (no labels), pitch (p
 
 | Preset | `length_scale` | `noise_scale` | `noise_w` | Use case |
 |---|---:|---:|---:|---|
-| ⭐ Narration patrimoniale | 1.10 | 0.50 | 0.70 | Calm, clear, gently warm — target for the parent Murmure app |
+| ⭐ Narration patrimoniale | 1.10 | 0.50 | 0.70 | Calm, clear, gently warm — heritage / documentary narration |
 | Documentaire | 1.00 | 0.55 | 0.75 | Neutral, balanced |
 | Conversation | 0.95 | 0.70 | 0.85 | Lively, natural |
 | Lecture rapide | 0.85 | 0.60 | 0.70 | Quick preview |
@@ -201,46 +201,6 @@ Targets for future iteration:
 - **CoreML provider** on iOS (`provider: 'coreml'`)
 - **`numThreads: 4`** (Pixel has 8 cores)
 - Warm-start TTFA path documented separately
-
-## Murmure-mobile integration sketch
-
-This POC is the first leg of a 3-tier TTS strategy for the parent app:
-
-```
-                  ┌─────────────────────────────┐
-                  │  Geofenced site reached     │
-                  └──────────────┬──────────────┘
-                                 ▼
-                  ┌─────────────────────────────┐
-                  │  Audio in local cache?      │
-                  └───┬────────────────────┬────┘
-                      │ yes                │ no
-                      ▼                    ▼
-                ┌──────────┐    ┌─────────────────────┐
-                │ Play it  │    │   Network OK?       │
-                └──────────┘    └──┬───────────────┬──┘
-                                   │ yes           │ no
-                                   ▼               ▼
-                         ┌──────────────┐   ┌─────────────────────┐
-                         │ HQ TTS API   │   │ Piper on-device     │
-                         │ (server)     │   │ (this POC)          │
-                         └──────────────┘   │ + Narration preset  │
-                                            └─────────────────────┘
-                                │                  │
-                                │             if model missing
-                                │                  ▼
-                                │          ┌──────────────┐
-                                │          │ OS TTS       │
-                                │          │ (fallback)   │
-                                │          └──────────────┘
-                                ▼
-                  ┌─────────────────────────────┐
-                  │ Async escalate to HQ        │
-                  │  → next visit gets HQ voice │
-                  └─────────────────────────────┘
-```
-
-The Narration patrimoniale preset locked in by this POC will be baked into the production app.
 
 ## Known limitations
 
