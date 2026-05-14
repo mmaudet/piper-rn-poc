@@ -24,8 +24,8 @@ export type Voice = {
 
 const SUPERTONIC_3_MODEL_ID = 'sherpa-onnx-supertonic-3-tts-int8-2026-05-11';
 const SUPERTONIC_3_ARCHIVE_BYTES = 102_000_000; // approx; refreshed on first download
-const KOKORO_ZH_MODEL_ID = 'kokoro-int8-multi-lang-v1_1';
-const KOKORO_ZH_ARCHIVE_BYTES = 95_000_000;
+const MELO_ZH_MODEL_ID = 'vits-melo-tts-zh_en';
+const MELO_ZH_ARCHIVE_BYTES = 167_006_755; // confirmed against sherpa-onnx checksum.txt
 
 export const VOICES: Record<VoiceKey, Voice> = {
   fr: {
@@ -125,17 +125,16 @@ export const VOICES: Record<VoiceKey, Voice> = {
   },
   zh: {
     key: 'zh',
-    modelType: 'kokoro',
-    modelId: KOKORO_ZH_MODEL_ID,
+    modelType: 'vits',
+    modelId: MELO_ZH_MODEL_ID,
     languageName: '中文',
     languageCode: 'cmn',
-    voiceName: 'kokoro-zf_001',
-    defaultSid: 3,
-    quality: 'int8',
+    voiceName: 'melo-tts',
+    quality: 'medium',
     speaker: 'female',
     flag: '🇨🇳',
-    archiveBytes: KOKORO_ZH_ARCHIVE_BYTES,
-    sampleRate: 24000,
+    archiveBytes: MELO_ZH_ARCHIVE_BYTES,
+    sampleRate: 44100,
   },
 };
 

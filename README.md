@@ -16,15 +16,15 @@ This is a standalone POC and benchmark tool. It exists to de-risk integration of
 
 ## What it does
 
-- 5 languages: **🇫🇷 French / 🇺🇸 English / 🇮🇹 Italian / 🇪🇸 Spanish / 🇩🇪 German**
-- Per-language voice download from the [sherpa-onnx model registry](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models) (64–77 MB per voice, `.tar.bz2`)
-- **5 presets** + 3 free sliders that map directly to Piper's runtime VITS knobs:
-  - `length_scale` — speech pace
-  - `noise_scale` — expressivity
-  - `noise_w` — rhythm naturalness
-- Sentence-level streaming: split text on `.!?`, start playing sentence 1 while 2+ synthesize
+- 8 languages across 3 model families:
+  - **🇫🇷 French / 🇺🇸 English / 🇮🇹 Italian / 🇪🇸 Spanish / 🇩🇪 German** — Piper VITS medium (~15-20 M params each)
+  - **🇳🇱 Dutch / 🇯🇵 Japanese** — Supertonic-3 int8 (31-language model, ~100 M params, 10 voices)
+  - **🇨🇳 Chinese mandarin** — MeloTTS zh+en (VITS, own Chinese phonemizer, single voice)
+- Per-language voice download from the [sherpa-onnx model registry](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models) (64–167 MB per archive, `.tar.bz2`)
+- **5 presets** + 3 free sliders that map directly to Piper's VITS runtime knobs (`length_scale` / `noise_scale` / `noise_w`); for Supertonic / Kokoro voices the noise sliders are grayed out (only `length_scale` is consumed)
+- Sentence-level streaming with CJK punctuation support: split text on `.!?` *and* `。！？`, start playing sentence 1 while 2+ synthesize
 - **Real-time pipeline timeline** in the UI: model load, text preprocess, phonemize, infer, decode, buffer ready, then **Time-To-First-Audio** (TTFA) highlighted
-- Last 5 runs kept in a scrollable history with Markdown export for benchmark tables
+- Last 5 runs kept in a scrollable history with Markdown export for benchmark tables, including the active provider (`nnapi` / `coreml` / `xnnpack` / `cpu`), `numThreads`, and `cold` vs `warm` flag
 
 ## Stack
 
@@ -128,15 +128,22 @@ What **isn't** controllable from the model itself: emotion (no labels), pitch (p
 
 ## Voices
 
-All `medium` quality (22 kHz, ~60-77 MB each), downloaded from the sherpa-onnx release `tts-models` tag.
+All downloaded from the sherpa-onnx release `tts-models` tag.
 
-| Lang | Voice | Speaker | Archive size | Why this voice |
-|---|---|---|---:|---|
-| FR | `fr_FR-siwis-medium` | F | 64.1 MB | Open-source FR reference; `upmc` has a known fast-speech bug |
-| EN | `en_US-lessac-medium` | F | 64.1 MB | De-facto reference voice in the open-source TTS community |
-| IT | `it_IT-paola-medium` | F | 64.1 MB | Only `medium` available in Italian (`riccardo` is `x_low`) |
-| ES | `es_ES-sharvard-medium` | F | 76.6 MB | More natural than `davefx` per community feedback |
-| DE | `de_DE-thorsten-medium` | M | 64.1 MB | Thorsten Müller donated his voice to the open-source TTS community |
+| Lang | Voice ID | Family | Speaker | Archive | Why this voice |
+|---|---|---|---|---:|---|
+| FR | `vits-piper-fr_FR-siwis-medium` | Piper VITS | F | 64.1 MB | Open-source FR reference; `upmc` has a known fast-speech bug |
+| EN | `vits-piper-en_US-lessac-medium` | Piper VITS | F | 64.1 MB | De-facto reference voice in the open-source TTS community |
+| IT | `vits-piper-it_IT-paola-medium` | Piper VITS | F | 64.1 MB | Only `medium` available in Italian (`riccardo` is `x_low`) |
+| ES | `vits-piper-es_ES-sharvard-medium` | Piper VITS | F | 76.6 MB | More natural than `davefx` per community feedback |
+| DE | `vits-piper-de_DE-thorsten-medium` | Piper VITS | M | 64.1 MB | Thorsten Müller donated his voice to the open-source TTS community |
+| NL | `sherpa-onnx-supertonic-3-tts-int8-2026-05-11` | Supertonic-3 | F (sid=2) | 102 MB ¹ | Piper `nl_NL-mls-medium` is broken (gibberish); Supertonic-3 covers 31 languages including nl, language picked via `extra: { lang: 'nl' }` at generate time |
+| JA | _(same archive as NL)_ | Supertonic-3 | F (sid=2) | shared with NL | No Piper Japanese exists (eSpeak-NG can't handle kanji); Supertonic-3 is the only credible on-device option in May 2026 |
+| ZH | `vits-melo-tts-zh_en` | MeloTTS VITS | F | 167 MB | Has its own Chinese phonemizer (not eSpeak-NG, so it actually works for Mandarin); ~6× faster RTF than the Kokoro v1.1 we tried first |
+
+¹ Supertonic-3 is shared between Dutch and Japanese — downloading either makes the other available without re-downloading.
+
+The full rationale for each pick (including the Kokoro v1.1 → MeloTTS switch on Chinese after benchmarking) is in [`DECISIONS.md`](./DECISIONS.md).
 
 ## Benchmarks
 
@@ -193,6 +200,24 @@ Observations on the optimized run:
 - **ES warm is slower than ES cold** (2342 vs 2177 ms). Probably noise in a single measurement; the warm benefit on the `sharvard` model is small relative to the per-sentence inference cost. Worth re-measuring to confirm.
 
 Note: `numThreads=4` and `provider='nnapi'` (Android) / `provider='coreml'` (iOS) are the new defaults in `src/services/SherpaTTS.ts`, with a fallback chain `[nnapi → xnnpack → cpu]` (Android) and `[coreml → cpu]` (iOS) so the app never fails to initialize if hardware acceleration isn't available.
+
+### Non-Piper voices (NL / JA / ZH) — model-size penalty
+
+The 3 languages that don't have a Piper voice rely on bigger models, and RTF scales inversely with parameter count. Same Pixel 10 Pro Fold, Release + NNAPI + threads=4, Narration patrimoniale preset (length=1.10; noise sliders ignored because not VITS), cold start:
+
+| Language | Family | Params (approx) | TTFA (ms) | RTF (infer) | Gap vs Piper |
+|----------|--------|----------------:|---------:|------------:|--------------|
+| NL `supertonic-3` | Supertonic-3 int8 (multi-lang via `extra.lang`) | 99 M | 8 915 | 3.33× | ~3× slower |
+| JA `supertonic-3` | same archive as NL | 99 M | 8 860 ¹ | ~3.5× ¹ | ~3× slower |
+| ZH `vits-melo-tts-zh_en` | MeloTTS VITS (own Chinese phonemizer) | 60-80 M est. | 10 984 | 1.70× | ~6× slower |
+
+¹ JA: post-splitter-fix measurement (sentence boundaries `。！？` recognized). The first attempt without CJK splitting had TTFA 27 s because the whole Japanese text was treated as one giant native call.
+
+Observations:
+
+- **The 5-7× model-size gap caps the achievable RTF.** Piper VITS medium is 15-20 M params, Supertonic-3 is ~99 M, MeloTTS ~60-80 M. NPU acceleration helps but can't bridge the structural difference. RTF > 1× is the practical bar for streaming (synthesis keeps up with playback) and we clear it everywhere.
+- **CJK sentence splitting matters.** The default `.!?` regex misses `。！？` (the only sentence enders in Japanese and Chinese), which turns the whole text into a single chunk and kills TTFA. The fix in `TTSPipeline.ts:SENTENCE_SPLIT_RE` adds the CJK alternatives.
+- **Kokoro v1.1 was the first ZH pick but yielded RTF ≈ 0.94×** (slower than realtime) due to a combination of larger params, the wrapper not exposing the official `lang="cmn"` / multi-lexicon CSV config, and possible NNAPI op fallback. We switched to MeloTTS which is a VITS-family model with its own Mandarin phonemizer — RTF 1.7× and TTFA 11 s, audible-quality validated on device.
 
 Targets for future iteration:
 
