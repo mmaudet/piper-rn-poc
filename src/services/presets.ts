@@ -91,3 +91,19 @@ export function presetLabel(key: PresetKey): string {
   if (key === 'custom') return 'Personnalisé';
   return PRESETS[key].label;
 }
+
+/** Which slider knobs are actually consumed by each model type. */
+export type ApplicableParams = {
+  length: boolean;
+  noise: boolean;
+  noiseW: boolean;
+};
+
+export function applicableParamsForModelType(
+  modelType: 'vits' | 'supertonic' | 'kokoro',
+): ApplicableParams {
+  if (modelType === 'vits') return { length: true, noise: true, noiseW: true };
+  // Supertonic + Kokoro only use a length / speed knob; noise params are ignored.
+  return { length: true, noise: false, noiseW: false };
+}
+

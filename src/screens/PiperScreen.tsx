@@ -227,7 +227,7 @@ export function PiperScreen() {
       <View style={styles.titleBlock}>
         <Text style={styles.title}>Piper TTS — On-device POC</Text>
         <Text style={styles.subtitle}>
-          5 langues • 3 paramètres modulables • streaming par phrase • benchmarks RTF/TTFA
+          8 langues (VITS + Supertonic + Kokoro) • 3 paramètres modulables • streaming par phrase • benchmarks RTF/TTFA
         </Text>
       </View>
 
@@ -248,6 +248,7 @@ export function PiperScreen() {
         <SynthesisParamPanel
           presetKey={presetKey}
           params={params}
+          modelType={VOICES[voice].modelType}
           onPresetChange={onPresetChange}
           onParamsChange={onParamsChange}
         />

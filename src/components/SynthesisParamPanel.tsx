@@ -6,14 +6,17 @@ import {
   PRESETS,
   PRESET_ORDER,
   SLIDER_RANGES,
+  applicableParamsForModelType,
   type PresetKey,
   type SynthParams,
 } from '../services/presets';
+import type { ModelKind } from '../services/voices';
 import { colors } from './theme';
 
 type Props = {
   presetKey: PresetKey;
   params: SynthParams;
+  modelType: ModelKind;
   onPresetChange: (key: PresetKey) => void;
   onParamsChange: (params: SynthParams) => void;
 };
@@ -21,9 +24,11 @@ type Props = {
 export function SynthesisParamPanel({
   presetKey,
   params,
+  modelType,
   onPresetChange,
   onParamsChange,
 }: Props) {
+  const applicable = applicableParamsForModelType(modelType);
   return (
     <View style={styles.container}>
       <View style={styles.presetRow}>
@@ -65,20 +70,31 @@ export function SynthesisParamPanel({
         label="length_scale (vitesse)"
         range={SLIDER_RANGES.lengthScale}
         value={params.lengthScale}
+        disabled={!applicable.length}
         onChange={(v) => onParamsChange({ ...params, lengthScale: v })}
       />
       <ParamSlider
         label="noise_scale (expressivité)"
         range={SLIDER_RANGES.noiseScale}
         value={params.noiseScale}
+        disabled={!applicable.noise}
         onChange={(v) => onParamsChange({ ...params, noiseScale: v })}
       />
       <ParamSlider
         label="noise_w (rythme naturel)"
         range={SLIDER_RANGES.noiseW}
         value={params.noiseW}
+        disabled={!applicable.noiseW}
         onChange={(v) => onParamsChange({ ...params, noiseW: v })}
       />
+
+      {modelType !== 'vits' ? (
+        <Text style={styles.helper}>
+          {modelType === 'supertonic'
+            ? 'Supertonic ignore noise_scale / noise_w — seul length_scale s\'applique (mappé sur speed).'
+            : 'Kokoro ignore noise_scale / noise_w — seul length_scale s\'applique.'}
+        </Text>
+      ) : null}
 
       <Pressable
         onPress={() => onParamsChange(MODEL_DEFAULTS)}
@@ -94,6 +110,7 @@ type SliderProps = {
   label: string;
   range: { min: number; max: number; step: number };
   value: number;
+  disabled?: boolean;
   onChange: (v: number) => void;
 };
 
@@ -101,9 +118,9 @@ function roundTo(value: number, step: number): number {
   return Math.round(value / step) * step;
 }
 
-function ParamSlider({ label, range, value, onChange }: SliderProps) {
+function ParamSlider({ label, range, value, disabled, onChange }: SliderProps) {
   return (
-    <View style={styles.sliderBlock}>
+    <View style={[styles.sliderBlock, disabled && styles.sliderDisabled]}>
       <View style={styles.sliderHead}>
         <Text style={styles.sliderLabel}>{label}</Text>
         <Text style={styles.sliderValue}>{value.toFixed(2)}</Text>
@@ -113,6 +130,7 @@ function ParamSlider({ label, range, value, onChange }: SliderProps) {
         maximumValue={range.max}
         step={range.step}
         value={value}
+        disabled={disabled === true}
         onValueChange={(v) => onChange(roundTo(v, range.step))}
         minimumTrackTintColor={colors.accent}
         maximumTrackTintColor={colors.border}
@@ -142,6 +160,8 @@ const styles = StyleSheet.create({
   presetLabelActive: { color: colors.accent },
   pressed: { opacity: 0.7 },
   sliderBlock: { gap: 2 },
+  sliderDisabled: { opacity: 0.35 },
+  helper: { color: colors.warning, fontSize: 11, fontStyle: 'italic' },
   sliderHead: { flexDirection: 'row', justifyContent: 'space-between' },
   sliderLabel: { color: colors.text, fontSize: 13, fontWeight: '500' },
   sliderValue: { color: colors.accent, fontSize: 13, fontFamily: 'Menlo', fontWeight: '600' },

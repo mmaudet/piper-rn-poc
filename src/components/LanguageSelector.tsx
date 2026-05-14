@@ -45,8 +45,9 @@ export function LanguageSelector({ selected, statuses, onSelect }: Props) {
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   btn: {
-    flex: 1,
-    minWidth: 56,
+    flexBasis: '22.5%',
+    flexGrow: 0,
+    minWidth: 64,
     paddingVertical: 10,
     paddingHorizontal: 4,
     borderRadius: 10,

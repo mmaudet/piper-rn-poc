@@ -6,8 +6,15 @@ import {
   type GeneratedAudio,
 } from 'react-native-sherpa-onnx/tts';
 import { fileModelPath } from 'react-native-sherpa-onnx';
-import { DocumentDirectoryPath, mkdir } from '@dr.pogodin/react-native-fs';
+import {
+  DocumentDirectoryPath,
+  mkdir,
+  exists,
+  copyFile,
+  readDir,
+} from '@dr.pogodin/react-native-fs';
 import type { SynthParams } from './presets';
+import type { Voice } from './voices';
 
 export type LoadedEngine = {
   engine: TtsEngine;
@@ -16,6 +23,9 @@ export type LoadedEngine = {
   params: SynthParams;
   provider: string;
   numThreads: number;
+  voice: Voice;
+  /** Resolved ruleFsts string if any (Kokoro multi-lang). */
+  ruleFsts?: string;
 };
 
 const TEMP_DIR = `${DocumentDirectoryPath}/piper-tmp`.replace(/\/+/g, '/');
@@ -42,6 +52,14 @@ function vitsOptions(params: SynthParams) {
   };
 }
 
+function kokoroOptions(params: SynthParams) {
+  return {
+    kokoro: {
+      lengthScale: params.lengthScale,
+    },
+  };
+}
+
 const DEFAULT_NUM_THREADS = 4;
 
 function preferredProviders(): string[] {
@@ -50,29 +68,68 @@ function preferredProviders(): string[] {
   return ['cpu'];
 }
 
+/**
+ * Workaround for the Kokoro multi-lang wrapper limitation: the wrapper picks
+ * up `lexicon.txt` (the "default") and ignores `lexicon-<lang>.txt`. To make
+ * Chinese work we copy `lexicon-zh.txt` to `lexicon.txt` if the latter is
+ * missing, and we collect the rule FSTs to pass via `ruleFsts`.
+ *
+ * Returns the resolved ruleFsts CSV string (or undefined if not Kokoro).
+ */
+async function prepareKokoroDir(modelDir: string): Promise<string | undefined> {
+  const defaultLex = `${modelDir}/lexicon.txt`;
+  const zhLex = `${modelDir}/lexicon-zh.txt`;
+  if (!(await exists(defaultLex)) && (await exists(zhLex))) {
+    await copyFile(zhLex, defaultLex);
+  }
+  const entries = await readDir(modelDir);
+  const fsts = entries
+    .filter((e) => e.isFile() && /\.fst$/.test(e.name))
+    .map((e) => e.path);
+  if (fsts.length === 0) return undefined;
+  return fsts.join(',');
+}
+
 async function tryCreateTTS(
+  voice: Voice,
   modelPath: string,
   params: SynthParams,
   numThreads: number,
   provider: string,
-): Promise<TtsEngine> {
-  return await createTTS({
+): Promise<{ engine: TtsEngine; ruleFsts: string | undefined }> {
+  let modelOptions: Record<string, unknown> | undefined;
+  let ruleFsts: string | undefined;
+
+  if (voice.modelType === 'vits') {
+    modelOptions = vitsOptions(params);
+  } else if (voice.modelType === 'kokoro') {
+    modelOptions = kokoroOptions(params);
+    ruleFsts = await prepareKokoroDir(modelPath);
+  }
+  // supertonic: no init-time modelOptions; lang is passed at generate time via `extra`.
+
+  const cfg = {
     modelPath: fileModelPath(modelPath),
-    modelType: 'vits',
+    modelType: voice.modelType,
     numThreads,
     provider,
     debug: false,
-    modelOptions: vitsOptions(params),
-  });
+    ...(modelOptions ? { modelOptions } : {}),
+    ...(ruleFsts ? { ruleFsts } : {}),
+  } as Parameters<typeof createTTS>[0];
+
+  const engine = await createTTS(cfg);
+  return { engine, ruleFsts };
 }
 
 export async function loadEngine(
+  voice: Voice,
   modelPath: string,
   params: SynthParams,
   numThreads: number = DEFAULT_NUM_THREADS,
 ): Promise<LoadedEngine> {
   const providers = preferredProviders();
-  const key = `${modelPath}::${params.lengthScale}:${params.noiseScale}:${params.noiseW}:${numThreads}`;
+  const key = `${voice.key}::${modelPath}::${params.lengthScale}:${params.noiseScale}:${params.noiseW}:${numThreads}`;
   if (activeEngine && activeKey === key) return activeEngine;
 
   if (activeEngine) {
@@ -88,19 +145,27 @@ export async function loadEngine(
   let lastErr: unknown = null;
   for (const provider of providers) {
     try {
-      const engine = await tryCreateTTS(modelPath, params, numThreads, provider);
+      const { engine, ruleFsts } = await tryCreateTTS(
+        voice,
+        modelPath,
+        params,
+        numThreads,
+        provider,
+      );
       const info = await engine.getModelInfo();
       activeEngine = {
         engine,
-        sampleRate: info.sampleRate ?? 22050,
+        sampleRate: info.sampleRate ?? voice.sampleRate,
         modelPath,
         params,
         provider,
         numThreads,
+        voice,
+        ruleFsts,
       };
       activeKey = key;
       console.log(
-        `PIPER_ENGINE provider=${provider} numThreads=${numThreads} sampleRate=${activeEngine.sampleRate}`,
+        `PIPER_ENGINE voice=${voice.key} modelType=${voice.modelType} provider=${provider} numThreads=${numThreads} sampleRate=${activeEngine.sampleRate} ruleFsts=${ruleFsts ?? 'none'}`,
       );
       return activeEngine;
     } catch (err) {
@@ -117,11 +182,15 @@ export async function loadEngine(
 
 export async function updateParams(params: SynthParams): Promise<void> {
   if (!activeEngine) return;
-  await activeEngine.engine.updateParams({
-    modelOptions: vitsOptions(params),
-  });
+  const voice = activeEngine.voice;
+  if (voice.modelType === 'vits') {
+    await activeEngine.engine.updateParams({ modelOptions: vitsOptions(params) });
+  } else if (voice.modelType === 'kokoro') {
+    await activeEngine.engine.updateParams({ modelOptions: kokoroOptions(params) });
+  }
+  // supertonic: nothing to update at init level; length is applied via speed at generate.
   activeEngine.params = params;
-  activeKey = `${activeEngine.modelPath}::${params.lengthScale}:${params.noiseScale}:${params.noiseW}:${activeEngine.numThreads}`;
+  activeKey = `${voice.key}::${activeEngine.modelPath}::${params.lengthScale}:${params.noiseScale}:${params.noiseW}:${activeEngine.numThreads}`;
 }
 
 export type SynthChunk = {
@@ -133,6 +202,18 @@ export type SynthChunk = {
 
 let wavCounter = 0;
 
+function generateOptionsFor(voice: Voice, params: SynthParams): Record<string, unknown> {
+  const opts: Record<string, unknown> = { silenceScale: 0.2 };
+  if (voice.defaultSid !== undefined) opts.sid = voice.defaultSid;
+  if (voice.modelType === 'supertonic') {
+    // Length applies via the `speed` knob at generate time. speed > 1 = faster.
+    // Our `lengthScale` convention is >1 = slower, so we invert.
+    opts.speed = 1 / Math.max(params.lengthScale, 0.01);
+    if (voice.generateLang) opts.extra = { lang: voice.generateLang };
+  }
+  return opts;
+}
+
 export async function synthesizeSentence(
   text: string,
   params: SynthParams,
@@ -140,16 +221,15 @@ export async function synthesizeSentence(
   if (!activeEngine) {
     throw new Error('TTS engine not loaded');
   }
-  const audio: GeneratedAudio = await activeEngine.engine.generateSpeech(text, {
-    silenceScale: 0.2,
-  });
+  const voice = activeEngine.voice;
+  const opts = generateOptionsFor(voice, params);
+  const audio: GeneratedAudio = await activeEngine.engine.generateSpeech(text, opts);
   const dir = await ensureTempDir();
   wavCounter += 1;
   const wavPath = `${dir}/chunk-${Date.now()}-${wavCounter}.wav`;
   await saveAudioToFile(audio, wavPath);
   const sampleRate = audio.sampleRate ?? activeEngine.sampleRate;
   const sampleCount = audio.samples?.length ?? 0;
-  void params;
   return {
     wavPath,
     durationSeconds: sampleCount / sampleRate,

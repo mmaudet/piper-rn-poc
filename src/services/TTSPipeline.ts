@@ -7,7 +7,7 @@ import {
   type SynthChunk,
 } from './SherpaTTS';
 import type { SynthParams } from './presets';
-import type { VoiceKey } from './voices';
+import { VOICES, type VoiceKey } from './voices';
 import type { PresetKey } from './presets';
 import { STEP_DEFS, type RunResult, type StepInfo, type PipelineStepKey } from './types';
 
@@ -21,10 +21,13 @@ export type PipelineHandlers = {
   onEvent?: (e: PipelineEvent) => void;
 };
 
-const SENTENCE_SPLIT_RE = /([.!?]+)\s+/g;
+// Latin sentence endings need a trailing whitespace to avoid splitting on abbreviations / decimals.
+// CJK sentence endings (。！？) are not followed by whitespace and split cleanly on their own.
+const SENTENCE_SPLIT_RE = /([.!?]+\s+|[。！？]+)/g;
 
 export function splitIntoSentences(text: string): string[] {
-  const cleaned = text.trim().replace(/\s+/g, ' ');
+  // Normalize whitespace but preserve CJK characters.
+  const cleaned = text.trim().replace(/[ \t\n\r]+/g, ' ');
   if (!cleaned) return [];
   const parts = cleaned.split(SENTENCE_SPLIT_RE);
   const sentences: string[] = [];
@@ -133,7 +136,7 @@ export async function runPipeline(
       onEvent,
     );
   } else {
-    await loadEngine(input.modelPath, input.params);
+    await loadEngine(VOICES[input.voice], input.modelPath, input.params);
     setStep(
       steps,
       'modelLoad',
