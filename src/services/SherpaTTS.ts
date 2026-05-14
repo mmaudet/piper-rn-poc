@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import {
   createTTS,
   saveAudioToFile,
@@ -13,6 +14,8 @@ export type LoadedEngine = {
   sampleRate: number;
   modelPath: string;
   params: SynthParams;
+  provider: string;
+  numThreads: number;
 };
 
 const TEMP_DIR = `${DocumentDirectoryPath}/piper-tmp`.replace(/\/+/g, '/');
@@ -39,11 +42,36 @@ function vitsOptions(params: SynthParams) {
   };
 }
 
+const DEFAULT_NUM_THREADS = 4;
+
+function preferredProviders(): string[] {
+  if (Platform.OS === 'android') return ['nnapi', 'xnnpack', 'cpu'];
+  if (Platform.OS === 'ios') return ['coreml', 'cpu'];
+  return ['cpu'];
+}
+
+async function tryCreateTTS(
+  modelPath: string,
+  params: SynthParams,
+  numThreads: number,
+  provider: string,
+): Promise<TtsEngine> {
+  return await createTTS({
+    modelPath: fileModelPath(modelPath),
+    modelType: 'vits',
+    numThreads,
+    provider,
+    debug: false,
+    modelOptions: vitsOptions(params),
+  });
+}
+
 export async function loadEngine(
   modelPath: string,
   params: SynthParams,
-  numThreads: number = 2,
+  numThreads: number = DEFAULT_NUM_THREADS,
 ): Promise<LoadedEngine> {
+  const providers = preferredProviders();
   const key = `${modelPath}::${params.lengthScale}:${params.noiseScale}:${params.noiseW}:${numThreads}`;
   if (activeEngine && activeKey === key) return activeEngine;
 
@@ -57,22 +85,34 @@ export async function loadEngine(
     activeKey = null;
   }
 
-  const engine = await createTTS({
-    modelPath: fileModelPath(modelPath),
-    modelType: 'vits',
-    numThreads,
-    debug: false,
-    modelOptions: vitsOptions(params),
-  });
-  const info = await engine.getModelInfo();
-  activeEngine = {
-    engine,
-    sampleRate: info.sampleRate ?? 22050,
-    modelPath,
-    params,
-  };
-  activeKey = key;
-  return activeEngine;
+  let lastErr: unknown = null;
+  for (const provider of providers) {
+    try {
+      const engine = await tryCreateTTS(modelPath, params, numThreads, provider);
+      const info = await engine.getModelInfo();
+      activeEngine = {
+        engine,
+        sampleRate: info.sampleRate ?? 22050,
+        modelPath,
+        params,
+        provider,
+        numThreads,
+      };
+      activeKey = key;
+      console.log(
+        `PIPER_ENGINE provider=${provider} numThreads=${numThreads} sampleRate=${activeEngine.sampleRate}`,
+      );
+      return activeEngine;
+    } catch (err) {
+      lastErr = err;
+      console.warn(
+        `SherpaTTS: provider '${provider}' failed (${String(err)}), trying next…`,
+      );
+    }
+  }
+  throw new Error(
+    `Failed to load TTS engine on any provider [${providers.join(',')}]: ${String(lastErr)}`,
+  );
 }
 
 export async function updateParams(params: SynthParams): Promise<void> {
@@ -81,7 +121,7 @@ export async function updateParams(params: SynthParams): Promise<void> {
     modelOptions: vitsOptions(params),
   });
   activeEngine.params = params;
-  activeKey = `${activeEngine.modelPath}::${params.lengthScale}:${params.noiseScale}:${params.noiseW}:2`;
+  activeKey = `${activeEngine.modelPath}::${params.lengthScale}:${params.noiseScale}:${params.noiseW}:${activeEngine.numThreads}`;
 }
 
 export type SynthChunk = {
@@ -109,7 +149,6 @@ export async function synthesizeSentence(
   await saveAudioToFile(audio, wavPath);
   const sampleRate = audio.sampleRate ?? activeEngine.sampleRate;
   const sampleCount = audio.samples?.length ?? 0;
-  // Touch params so TS does not flag it; engine already initialized with these.
   void params;
   return {
     wavPath,

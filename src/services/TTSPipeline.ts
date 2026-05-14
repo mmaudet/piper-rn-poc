@@ -233,6 +233,7 @@ export async function runPipeline(
     pcmBytes,
     deviceLabel: deviceLabel(),
   };
+  const engine = getActiveEngine();
   console.log(
     `PIPER_BENCH ${JSON.stringify({
       voice: result.voice,
@@ -245,6 +246,9 @@ export async function runPipeline(
       rtf: Number(result.rtf.toFixed(2)),
       pcmBytes: result.pcmBytes,
       deviceLabel: result.deviceLabel,
+      provider: engine?.provider ?? 'unknown',
+      numThreads: engine?.numThreads ?? 0,
+      cold: !input.modelAlreadyLoaded,
     })}`,
   );
   return result;
