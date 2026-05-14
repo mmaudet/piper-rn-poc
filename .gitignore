@@ -1,6 +1,16 @@
 # OSX
 #
 .DS_Store
+**/.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor lock files / backups
+.~lock.*#
+~$*
+*.swp
+*.swo
+*~
 
 # Xcode
 #
@@ -40,6 +50,13 @@ local.properties
 node_modules/
 npm-debug.log
 yarn-error.log
+*.log
+*.tsbuildinfo
+
+# Environment / secrets (none currently in repo, but defensive)
+.env
+.env.*
+!.env.example
 
 # fastlane
 #
